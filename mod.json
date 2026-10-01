@@ -1,0 +1,10 @@
+{
+  "id": "com.saulob.cutscene-skip",
+  "name": "Cutscene Skip",
+  "version": "1.0.0",
+  "author": "saulob",
+  "description": "Skip cutscenes manually with F9 or automatically with F10 while preserving game events, item rewards, dialogue waits and progression",
+  "compatibility": {
+    "abi": 2
+  }
+}
