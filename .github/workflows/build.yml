@@ -1,0 +1,107 @@
+name: Build
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: ${{ matrix.platform }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows-amd64
+            os: windows-latest
+            configure: -A x64
+            library: mod.dll
+          - platform: linux-amd64
+            os: ubuntu-24.04
+            configure: -G Ninja -DCMAKE_BUILD_TYPE=Release
+            library: mod.so
+          - platform: linux-arm64
+            os: ubuntu-24.04-arm
+            configure: -G Ninja -DCMAKE_BUILD_TYPE=Release
+            library: mod.so
+          - platform: macos-arm64
+            os: macos-latest
+            configure: -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0
+            library: mod.so
+          - platform: macos-x86_64
+            os: macos-latest
+            configure: -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES=x86_64 -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0
+            library: mod.so
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Ninja (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y ninja-build
+
+      - name: Install Ninja (macOS)
+        if: runner.os == 'macOS'
+        run: brew install ninja
+
+      - name: Configure
+        run: cmake -S . -B build ${{ matrix.configure }}
+
+      - name: Build
+        run: cmake --build build --config Release
+
+      - name: Check staged library
+        shell: bash
+        run: |
+          lib="build/cutscene-skip/lib/${{ matrix.platform }}/${{ matrix.library }}"
+          test -f build/cutscene-skip/mod.json
+          test -f "$lib"
+          find build/cutscene-skip -type f | sort
+          case "${{ runner.os }}" in
+            Linux)
+              file "$lib"
+              readelf -d "$lib" | grep -E "NEEDED|RPATH|RUNPATH" || true
+              exports="$(nm -D --defined-only "$lib")"
+              ;;
+            macOS)
+              file "$lib"
+              otool -L "$lib"
+              exports="$(nm -gU "$lib")"
+              ;;
+            *)
+              exit 0
+              ;;
+          esac
+          echo "$exports"
+          for name in fh_mod_initialize fh_mod_update fh_mod_shutdown; do
+            echo "$exports" | grep -q "$name" || { echo "missing export: $name"; exit 1; }
+          done
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cutscene-skip-${{ matrix.platform }}
+          path: build/cutscene-skip/
+          if-no-files-found: error
+
+  layout:
+    name: Multi-platform layout
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: cutscene-skip-*
+          path: cutscene-skip
+          merge-multiple: true
+
+      - name: List
+        run: find cutscene-skip -type f | sort
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cutscene-skip-all-platforms
+          path: cutscene-skip/
+          if-no-files-found: error

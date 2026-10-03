@@ -1,4 +1,5 @@
 /build/
+/build-*/
 /dist/
 /cmake-build-*/
 CMakeCache.txt
